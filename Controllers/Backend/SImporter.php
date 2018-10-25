@@ -76,6 +76,25 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         }
     }
 
+    protected function importProcess($filePath) {
+        $results = new Shopware_Components_CsvIterator($filePath, ';');
+        $test = "";
+        $order = array();
+        $i = 0;
+        foreach ($results as $orderData) {
+            $orderData = $this->toUtf8($orderData);
+            array_push($order, $this->getOrderSingleData($orderData));
+        }
+
+        //$order = $this->getOrderMergedData($order);
+
+        echo json_encode(array(
+            'success' => false,
+            'message' => count($order),
+        ));
+        return;
+    }
+
     protected function getOrderSingleData($orderData){
         $order['orderID'] = $orderData['Bestellnr Sabangnet'];
         $order['numberID'] = $orderData['bestellnr'];
@@ -84,7 +103,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['billing_lastname'] = $orderData['Kunden Name'];
         $order['shipping_street'] = $orderData['Adresse'];
         $order['shipping_streetnumber'] = "";
-        $order['shipping_zipcode'] = $orderData['POSTCODE'];
+        $order['shipping_zipcode'] = str_replace("-", "",  $orderData['POSTCODE']);
         $order['shippingCountryName'] = 'Südkorea';
         $order['shipping_countryID'] = 38;
         $order['cleared'] = 10;
@@ -118,9 +137,12 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['config'] = "";
         $order['spedition'] = "pantos";
         $order['deviceType'] = "";
+        $order['attribute2'] = $orderData['Bestellnr Sabangnet'];
+        $order['attribute3'] = $orderData['bestellnr'];
         $order['attribute13'] = $orderData['Name'];
         $order['cleareddate'] = date("d.m.Y");
         $order['orderTime'] = date("d.m.Y");
+        $order['internalComment'] = "";
 
         if(substr($orderData['tel von Empfänger'], 0, 3) === "010"){
             $order['phone'] = "0082".strstr($orderData['tel von Empfänger'], '1');
@@ -136,21 +158,28 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $order['partnerID'] = 'Naver';
             $order['paymentID'] = 7;
 	    $order['articleNumber'] = $orderData['Option7'];
-        } else if($shop === '지마켓'){
+            $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
+        } 
+        else if($shop === '지마켓'){
             $order['ustid'] = $orderData['Option8'];
             $order['partnerID'] = 'G9';
             $order['paymentID'] = 16;
             $order['articleNumber'] = $orderData['Option7'];
-        } else if($shop === '옥션'){
+            $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
+        } 
+        else if($shop === '옥션'){
             $order['ustid'] = $orderData['Option10'];
             $order['partnerID'] = 'eBay-Korea';
             $order['paymentID'] = 8;
 	    $order['articleNumber'] = $orderData['Option7'];
-        } else if($shop === '11번가'){
+            $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
+        } 
+        else if($shop === '11번가'){
             $order['ustid'] = $orderData['Option4'];
             $order['partnerID'] = '11St';
             $order['paymentID'] = 9;
 	    $order['articleNumber'] = $orderData['Option6'];
+            $order['attribute1'] = $orderData['11St Versand Nr'];
         }
 
         $addr_attr = $this->getAddrAttr($order['shipping_zipcode']);
@@ -162,9 +191,102 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['attribute11'] = $addr_attr['center_team_num'];
         $order['attribute12'] = $addr_attr['center_local_num'];
 
+        $currency = $this->getCurrency();
+
+        $order['price'] = $orderData['Preis']/$currency;
+        //$order['articleName'] = $this->getArticleName($orderData['articleNumber']);
         //select name from s_articles where id = (select articleID from s_articles_details where ordernumber=%s group by articleID)
 
         return $order;
+    }
+
+    protected function getOrderMergedData($orders) {
+        $lastTrackingCode = $this->getLastTrackingCode();
+        $lastNumberId = 0;
+        $orderNum = count($orders);
+
+        for($i = 0; $i<$orderNum; $i++) {
+            if( $orders[$i]['internalComment'] !== "")
+                continue;
+
+            for($j=$i; $j<$orderNum; $j++){
+                
+            }
+            
+        }
+    }
+
+    protected function getCustomData($orders) {
+        $customs = array();
+
+        foreach($orders as $order){
+            if($order['trackingcode'] === "")
+                continue;
+
+            $custom['customnumber'] = $order['numberId'];
+            $custom['password'] = "$2y$10$SgvUYRixxJK/.c0UaXPfl/k000ecab75ab-d67b-11e6-a185-4061862b98fd";
+            $custom['encoder'] = "bcrypt";
+            $custom['billing_company'] = "";
+            $custom['billing_department'] = "";
+            $custom['billing_salutation'] = "ms";
+            $custom['billing_firstname'] = $order['billing_firstname'];
+            $custom['billing_lastname'] = $order['billing_lastname'];
+            $custom['billing_street'] = $order['shipping_street'];
+            $custom['billing_zipcode'] = $order['shipping_zipcode'];
+            $custom['phone'] = $order['phone'];
+            $custom['billing_countryID'] = 38;
+            $custom['billing_stateID'] = "";
+            $custom['ustid'] = $order['ustid'];
+            $custom['paymentID'] = $order['paymentID'];
+            $custom['customergroup'] = $order['partnerID'];
+
+            $custom['language'] = 3;
+            $custom['subshopID'] = 3;
+            $custom['active'] = 0;
+
+            if( $order['mobile'] === "0082" ) {
+                $custom['mobile'] = "";
+                $custom['mobile_Notifi'] = 0;
+            }
+            else{
+                $custom['mobile'] = $order['mobile'];
+                $custom['mobile_Notifi'] = 1;
+            }
+
+            else if($order
+            if($order['partnerID'] === 'eBay-Korea'){
+                $custom['email'] = $custom['customernumber']."@korea.com";
+            }
+            if($order['partnerID'] === 'Naver'){
+                $custom['email'] = $custom['customernumber']."@naver.com";
+            }
+            if($order['partnerID'] === 'G9'){
+                $custom['email'] = $custom['customernumber']."@gmarket.com";
+            }
+            if($order['partnerID'] === '11St'){
+                $custom['email'] = $custom['customernumber']."@11st.com";
+            }
+        }
+    }
+
+    protected function getLastTrackingCode(){
+        $tcQuery = "SELECT trackingcode FROM s_order o ORDER BY o.trackingcode DESC";
+        $lastTrackingCode = Shopware()->Models()->getConnection()->fetchAll($tcQuery)[0]['trackingcode'];
+
+        return $lastTrackingCode+1;
+    }
+
+    protected function getArticleName($an){
+        $anQuery = "select name from s_articles where id = (select articleID from s_articles_details where ordernumber=".$an." group by articleID)";
+        $articleName = Shopware()->Models()->getConnection()->fetchAll($anQuery)[0];
+        return $this->toUtf8($articleName)['name'];
+    }
+
+    protected function getCurrency() {
+        $currencyQuery = "select factor from s_core_currencies where id = 6";
+        $currency = Shopware()->Models()->getConnection()->fetchAll($currencyQuery)[0]['factor'];
+
+        return $currency;
     }
 
     protected function getAddrAttr($zipcode) {
@@ -172,22 +294,6 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $attr = Shopware()->Models()->getConnection()->fetchAll($attrQuery);
 
         return $attr[0];
-    }
-
-    protected function importProcess($filePath) {
-        $results = new Shopware_Components_CsvIterator($filePath, ';');
-        $test = "";
-
-        foreach ($results as $orderData) {
-            $orderData = $this->toUtf8($orderData);
-            $order = $this->getOrderSingleData($orderData);
-            break;
-        }
-        echo json_encode(array(
-            'success' => false,
-            'message' => 'center_num',
-        ));
-        return;
     }
 
     protected function toUtf8(array $input)
