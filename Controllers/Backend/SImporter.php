@@ -253,7 +253,6 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
                 $custom['mobile_Notifi'] = 1;
             }
 
-            else if($order
             if($order['partnerID'] === 'eBay-Korea'){
                 $custom['email'] = $custom['customernumber']."@korea.com";
             }
