@@ -65,8 +65,6 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             return;
 
         } catch (\Exception $e) {
-            // At this point any Exception would result in the import/export frontend "loading forever"
-            // Append stack trace in order to be able to debug
             $message = $e->getMessage()."<br>\r\nStack Trace:".$e->getTraceAsString();
             echo json_encode(array(
                 'success' => false,
@@ -79,25 +77,69 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
     protected function importProcess($filePath) {
         $results = new Shopware_Components_CsvIterator($filePath, ';');
         $test = "";
-        $order = array();
+        $orders = array();
         $i = 0;
         foreach ($results as $orderData) {
             $orderData = $this->toUtf8($orderData);
-            array_push($order, $this->getOrderSingleData($orderData));
+            array_push($orders, $this->getOrderSingleData($orderData));
         }
 
-        //$order = $this->getOrderMergedData($order);
+        $orders = $this->getOrderMergedData($orders);
+
+        $customers = $this->getCustomerData($orders);
+
+        $this->array_to_csv_download($orders, "Bestellung.csv", ";");
+
+        //header('Content-Disposition: attachment; filename="Bestellung.csv"');
+        //header('Content-Type: text/plain');
+        //header('Content-Length: ' . strlen($ordersInCsv));
+        //header('Connection: close');
+
 
         echo json_encode(array(
             'success' => false,
-            'message' => count($order),
+            'message' => $ordersInCsv,
         ));
         return;
     }
 
+    protected function array_to_csv_download($array, $filename = "export.csv", $delimiter=";") {
+        $f = fopen('php://memory', 'w'); 
+        foreach ($array as $line) { 
+            fputcsv($f, $line, $delimiter); 
+        }
+
+        fseek($f, 0);
+        header('Content-Type: application/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="'.$filename.'";');
+        fpassthru($f);
+    }
+
+    protected function arrayToCsv( array &$fields, $delimiter = ';', $enclosure = '"', $encloseAll = false, $nullToMysqlNull = false ) {
+        $delimiter_esc = preg_quote($delimiter, '/');
+        $enclosure_esc = preg_quote($enclosure, '/');
+
+        $output = array();
+        foreach ( $fields as $field ) {
+            if ($field === null && $nullToMysqlNull) {
+                $output[] = 'NULL';
+                continue;
+            }
+
+            if ( $encloseAll || preg_match( "/(?:${delimiter_esc}|${enclosure_esc}|\s)/", $field ) ) {
+                $output[] = $enclosure . str_replace($enclosure, $enclosure . $enclosure, $field) . $enclosure;
+            }
+            else {
+                $output[] = $field;
+            }
+        }
+
+        return implode( $delimiter, $output );
+    }
+
     protected function getOrderSingleData($orderData){
         $order['orderID'] = $orderData['Bestellnr Sabangnet'];
-        $order['numberID'] = $orderData['bestellnr'];
+        $order['numberId'] = $orderData['bestellnr'];
         $order['customerId'] = $orderData['bestellnr'];
         $order['billing_firstname'] = $orderData['Kunden Name'];
         $order['billing_lastname'] = $orderData['Kunden Name'];
@@ -142,7 +184,6 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['attribute13'] = $orderData['Name'];
         $order['cleareddate'] = date("d.m.Y");
         $order['orderTime'] = date("d.m.Y");
-        $order['internalComment'] = "";
 
         if(substr($orderData['tel von Empfänger'], 0, 3) === "010"){
             $order['phone'] = "0082".strstr($orderData['tel von Empfänger'], '1');
@@ -205,26 +246,55 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $lastNumberId = 0;
         $orderNum = count($orders);
 
-        for($i = 0; $i<$orderNum; $i++) {
-            if( $orders[$i]['internalComment'] !== "")
-                continue;
+        $internalComment = "";
+        $attr1 = "";
+        $attr2 = "";
+        $attr3 = "";
 
-            for($j=$i; $j<$orderNum; $j++){
-                
-            }
+        for($i=0; $i<count($orders); $i++) {
+            if($lastNumberId === $orders[$i]['numberId'])
+                $orders[$i]['trackingcode'] = "";
+
+            else {
+                $lastNumberId = $orders[$i]['numberId'];
+                $orders[$i]['trackingcode'] = $lastTrackingCode;
+                $lastTrackingCode += 1;
+
+                $internalComment = $orders[$j]['numberId'].','.','.$orders[$j]['attribute1'];
+                $attr1 = $orders[$j]['attribute1'];
+                $attr2 = $orders[$j]['attribute2'];
+                $attr3 = $orders[$j]['attribute3'];
             
+
+                for($j = $i+1; $j<count($orders); $j++) {
+                    if($lastNumberId !== $orders[$j]['numberId'])
+                        break;
+
+                    $internalComment = $orders[$j]['numberId'].','.$internalComment.','.$orders[$j]['attribute1'];
+                    $attr1 = $attr1.'|'.$orders[$j]['attribute1'];
+                    $attr2 = $attr2.'|'.$orders[$j]['attribute2'];
+                    $attr3 = $attr3.'|'.$orders[$j]['attribute3'];
+                }
+            }
+
+            $orders[$i]['internalComment'] = $internalComment;
+            $orders[$i]['attribute1'] = $attr1;
+            $orders[$i]['attribute2'] = $attr2;
+            $orders[$i]['attribute3'] = $attr3;
         }
+
+        return $orders[19]['internalComment'];
     }
 
-    protected function getCustomData($orders) {
+    protected function getCustomerData($orders) {
         $customs = array();
 
-        foreach($orders as $order){
+        foreach( $orders as $order){
             if($order['trackingcode'] === "")
                 continue;
 
             $custom['customnumber'] = $order['numberId'];
-            $custom['password'] = "$2y$10$SgvUYRixxJK/.c0UaXPfl/k000ecab75ab-d67b-11e6-a185-4061862b98fd";
+            $custom['password'] = "$2y$10\$SgvUYRixxJK/.c0UaXPfl/k000ecab75ab-d67b-11e6-a185-4061862b98fd";
             $custom['encoder'] = "bcrypt";
             $custom['billing_company'] = "";
             $custom['billing_department'] = "";
@@ -253,19 +323,19 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
                 $custom['mobile_Notifi'] = 1;
             }
 
-            if($order['partnerID'] === 'eBay-Korea'){
-                $custom['email'] = $custom['customernumber']."@korea.com";
-            }
-            if($order['partnerID'] === 'Naver'){
-                $custom['email'] = $custom['customernumber']."@naver.com";
-            }
-            if($order['partnerID'] === 'G9'){
-                $custom['email'] = $custom['customernumber']."@gmarket.com";
-            }
-            if($order['partnerID'] === '11St'){
-                $custom['email'] = $custom['customernumber']."@11st.com";
-            }
+            if($order['partnerID'] === 'eBay-Korea')
+                $custom['email'] = $order['numberId']."@korea.com";
+            else if($order['partnerID'] === 'Naver')
+                $custom['email'] = $order['numberId']."@naver.com";
+            else if($order['partnerID'] === 'G9')
+                $custom['email'] = $order['numberId']."@gmarket.com";
+            else if($order['partnerID'] === '11St')
+                $custom['email'] = $order['numberId']."@11st.com";
+
+            array_push($customs, $this->toUtf8($custom));
         }
+
+        return $customs[1]['customnumber'];
     }
 
     protected function getLastTrackingCode(){
