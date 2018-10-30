@@ -79,21 +79,22 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $test = "";
         $orders = array();
         $i = 0;
+
         foreach ($results as $orderData) {
             $orderData = $this->toUtf8($orderData);
             array_push($orders, $this->getOrderSingleData($orderData));
         }
 
-        $orders = $this->getOrderMergedData($orders);
-        $customers = $this->getCustomerData($orders);
+        //$orders = $this->getOrderMergedData($orders);
+        //$customers = $this->getCustomerData($orders);
 
-        $this->exportFiles($this->toUtf8($orders), ';', "Bestellung.csv");
-        $this->exportFiles($this->toUtf8($customers), ';', "Kunden.csv");
+        //$this->exportFiles($this->toUtf8($orders), ';', "Bestellung.csv");
+        //$this->exportFiles($this->toUtf8($customers), ';',  "Kunden.csv");
 
-        //echo json_encode(array(
-        //    'success' => false,
-        //    'message' => $re,
-        //));
+        echo json_encode(array(
+            'success' => false,
+            'message' => $this->getArticleName('MM11206'),
+        ));
         return;
     }
 
@@ -108,12 +109,12 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
         echo $result;
 
-        header("Expires: Fri, 01 Jan 2010 05:00:00 GMT");
         return;
     }
 
     protected function getOrderSingleData($orderData){
         $addr_attr = $this->getAddrAttr(str_replace("-", "",  $orderData['POSTCODE']));
+        $currency = $this->getCurrency();
 
         $order['orderID'] = $orderData['Bestellnr Sabangnet'];
         $order['numberId'] = $orderData['bestellnr'];
@@ -135,9 +136,9 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['partnerID'] = "";
         $order['subshopID'] = 3;
         $order['invoice_amount'] = '';
-        $order['invoice_amount_net'] = "";
+        $order['invoice_amount_net'] = number_format($orderData['Preis']/$currency, 1)."0";
         $order['invoiceShipping'] = "";
-        $order['invoiceShippingNet'] = "";
+        $order['invoiceShippingNet'] = number_format($orderData['Versandkosten']/$currency, 1)."0";
         $order['orderTime'] = date("d.m.Y");
         $order['transactionID'] = "";
         $order['comment'] = "";
@@ -170,7 +171,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['number'] = "";
  
         $order['articleNumber'] = "";
-        $order['price'] = "";
+        $order['price'] = number_format($orderData['Preis']/$currency, 1)."0";
         $order['quantity'] = $orderData['menge'];
         $order['articleName'] = "";
         $order['shipped'] = "";
@@ -223,15 +224,11 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $order['attribute1'] = $orderData['11St Versand Nr'];
         }
 
-
-        $currency = $this->getCurrency();
-
-        //$order['price'] = $orderData['Preis']/$currency;
-        //$order['articleName'] = $this->getArticleName($orderData['articleNumber']);
-        //select name from s_articles where id = (select articleID from s_articles_details where ordernumber=%s group by articleID)
+        $order['articleName'] = $this->getArticleName($order['articleNumber']);
 
         return $order;
     }
+
 
     protected function getOrderMergedData($orders) {
         $lastTrackingCode = $this->getLastTrackingCode();
@@ -244,10 +241,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $attr3 = "";
 
         for($i=0; $i<count($orders); $i++) {
-            if($lastNumberId === $orders[$i]['numberId'])
-                $orders[$i]['trackingcode'] = "";
-
-            else {
+            if($lastNumberId !== $orders[$i]['numberId']) {
                 $lastNumberId = $orders[$i]['numberId'];
                 $orders[$i]['trackingcode'] = $lastTrackingCode;
                 $lastTrackingCode += 1;
@@ -266,6 +260,9 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
                     $attr1 .= '|'.$orders[$j]['attribute1'];
                     $attr2 .= '|'.$orders[$j]['attribute2'];
                     $attr3 .= '|'.$orders[$j]['attribute3'];
+
+                    $orders[$j]['trackingcode'] = "";
+                    $orders[$j]['invoiceShippingNet'] = 0;
                 }
             }
 
@@ -332,17 +329,18 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         return $customs;
     }
 
+    protected function getArticleName($articleNumber) {
+        $anQuery = "SELECT name FROM s_articles WHERE id = (SELECT articleID FROM s_articles_details WHERE ordernumber=\"".$articleNumber."\");";
+        $articleName = Shopware()->Models()->getConnection()->fetchAll($anQuery)[0]['name'];
+
+        return $articleName;
+    }
+
     protected function getLastTrackingCode(){
         $tcQuery = "SELECT trackingcode FROM s_order o ORDER BY o.trackingcode DESC";
         $lastTrackingCode = Shopware()->Models()->getConnection()->fetchAll($tcQuery)[0]['trackingcode'];
 
         return $lastTrackingCode+1;
-    }
-
-    protected function getArticleName($an){
-        $anQuery = "select name from s_articles where id = (select articleID from s_articles_details where ordernumber=".$an." group by articleID)";
-        $articleName = Shopware()->Models()->getConnection()->fetchAll($anQuery)[0];
-        return $this->toUtf8($articleName)['name'];
     }
 
     protected function getCurrency() {
