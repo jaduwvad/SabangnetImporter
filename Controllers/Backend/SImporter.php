@@ -201,6 +201,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $order['paymentID'] = 7;
 	    $articleNumber = $orderData['Option7'];
             $order['invoice_amount_net'] -= $orderData['Option8']+$orderData['Option9'];
+            $order['invoiceShippingNet'] *= 96/100;
             $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
         } 
         else if($shop === '지마켓'){
@@ -227,6 +228,9 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $order['invoice_amount_net'] -= str_replace(",", "", $orderData['Option7']);
             $order['attribute1'] = $orderData['11St Versand Nr'];
         }
+
+        $order['invoice_amount_net'] = number_format($order['invoice_amount_net']/$currency, 1)."0";
+        
 
         if(strpos($articleNumber, "_SET_") !== false){
             $temp = explode("_", $articleNumber);
