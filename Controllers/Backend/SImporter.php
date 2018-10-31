@@ -93,7 +93,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
         //echo json_encode(array(
         //    'success' => false,
-        //    'message' => $this->getArticleName(str_replace("\n", "", $this->getUpdateArticleNumber('ITS-2785418000'))),
+        //    'message' => $orders[0],
         //));
         return;
     }
@@ -136,7 +136,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['partnerID'] = "";
         $order['subshopID'] = 3;
         $order['invoice_amount'] = '';
-        $order['invoice_amount_net'] = number_format($orderData['Preis']/$currency, 1)."0";
+        $order['invoice_amount_net'] = $orderData['Totalpreis'];
         $order['invoiceShipping'] = "";
         $order['invoiceShippingNet'] = number_format($orderData['Versandkosten']/$currency, 1)."0";
         $order['orderTime'] = date("d.m.Y");
@@ -158,7 +158,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $order['taxfree'] = "1";
         $order['temporaryID'] = "1";
         $order['referer'] = "";
-        $order['trackingcode'] = "";
+        $order['trackingCode'] = "";
         $order['languageIso'] = 3;
         $order['currency'] = "EUR";
         $order['currencyfactor'] = "";
@@ -199,37 +199,55 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $order['ustid'] = $orderData['Option6'];
             $order['partnerID'] = 'Naver';
             $order['paymentID'] = 7;
-	    $order['articleNumber'] = $orderData['Option7'];
+	    $articleNumber = $orderData['Option7'];
+            $order['invoice_amount_net'] -= $orderData['Option8']+$orderData['Option9'];
             $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
         } 
         else if($shop === '지마켓'){
             $order['ustid'] = $orderData['Option8'];
             $order['partnerID'] = 'G9';
             $order['paymentID'] = 16;
-            $order['articleNumber'] = $orderData['Option7'];
+            $articleNumber = $orderData['Option7'];
+            $order['invoice_amount_net'] -= str_replace(",", "", $orderData['Option6']);
             $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
         } 
         else if($shop === '옥션'){
             $order['ustid'] = $orderData['Option10'];
             $order['partnerID'] = 'eBay-Korea';
             $order['paymentID'] = 8;
-	    $order['articleNumber'] = $orderData['Option7'];
+	    $articleNumber = $orderData['Option7'];
+            $order['invoice_amount_net'] -= str_replace(",", "", $orderData['Option6']);
             $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
         } 
         else if($shop === '11번가'){
             $order['ustid'] = $orderData['Option4'];
             $order['partnerID'] = '11St';
             $order['paymentID'] = 9;
-	    $order['articleNumber'] = $orderData['Option6'];
+	    $articleNumber = $orderData['Option6'];
+            $order['invoice_amount_net'] -= str_replace(",", "", $orderData['Option7']);
             $order['attribute1'] = $orderData['11St Versand Nr'];
         }
+
+        if(strpos($articleNumber, "_SET_") !== false){
+            $temp = explode("_", $articleNumber);
+            $articleNumber = $temp[2];
+            $quantity = $temp[0];
+            $order['quantity'] = $quantity;
+            $order['price'] /= $quantity;
+        }
+
+        $order['articleNumber'] = $articleNumber;
 
         $articleName = $this->getArticleName($order['articleNumber']);
 
         if($articleName == ""){
-            $order['articleNumber'] = $this->getUpdateArticleNumber($order['articleNumber']);
-            $articleName = $this->getArticleName($order['articleNumber']);
+            $anTemp = $this->getUpdateArticleNumber($order['articleNumber']);
+            if($anTemp !== ""){
+                $order['articleNumber'] = $anTemp;
+                $articleName = $this->getArticleName($order['articleNumber']);
+            }
         }
+            
 
         $order['articleName'] = $articleName;
 
@@ -250,7 +268,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         for($i=0; $i<count($orders); $i++) {
             if($lastNumberId !== $orders[$i]['numberId']) {
                 $lastNumberId = $orders[$i]['numberId'];
-                $orders[$i]['trackingcode'] = $lastTrackingCode;
+                $orders[$i]['trackingCode'] = $lastTrackingCode;
                 $lastTrackingCode += 1;
 
                 $internalComment = $orders[$i]['numberId'].','.','.$orders[$i]['attribute1'];
@@ -268,7 +286,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
                     $attr2 .= '|'.$orders[$j]['attribute2'];
                     $attr3 .= '|'.$orders[$j]['attribute3'];
 
-                    $orders[$j]['trackingcode'] = "";
+                    $orders[$j]['trackingCode'] = "";
                     $orders[$j]['invoiceShippingNet'] = 0;
                 }
             }
@@ -286,19 +304,11 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $customs = array();
 
         foreach( $orders as $order){
-            if($order['trackingcode'] === "")
+            if($order['trackingCode'] === "")
                 continue;
 
-            $custom['customnumber'] = $order['numberId'];
-
-            if($order['partnerID'] === 'eBay-Korea')
-                $custom['email'] = $order['numberId']."@korea.com";
-            else if($order['partnerID'] === 'Naver')
-                $custom['email'] = $order['numberId']."@naver.com";
-            else if($order['partnerID'] === 'G9')
-                $custom['email'] = $order['numberId']."@gmarket.com";
-            else if($order['partnerID'] === '11St')
-                $custom['email'] = $order['numberId']."@11st.com";
+            $custom['customernumber'] = $order['numberId'];
+            $custom['email'] = "";
 
             $custom['password'] = "$2y$10\$SgvUYRixxJK/.c0UaXPfl/k000ecab75ab-d67b-11e6-a185-4061862b98fd";
             $custom['encoder'] = "bcrypt";
@@ -309,6 +319,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $custom['billing_lastname'] = $order['billing_lastname'];
             $custom['billing_street'] = $order['shipping_street'];
             $custom['billing_zipcode'] = $order['shipping_zipcode'];
+            $custom['billing_city'] = $order['shipping_city'];
             $custom['phone'] = $order['phone'];
 
             if( $order['mobile'] === "0082" ) {
@@ -324,11 +335,27 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $custom['billing_stateID'] = "";
             $custom['ustid'] = $order['ustid'];
             $custom['paymentID'] = $order['paymentID'];
+            
             $custom['customergroup'] = $order['partnerID'];
 
             $custom['language'] = 3;
             $custom['subshopID'] = 3;
             $custom['active'] = 0;
+
+            if($order['partnerID'] === 'eBay-Korea'){
+                $custom['email'] = $order['numberId']."@korea.com";
+                $custom['customergroup'] = "G9";
+            }
+            else if($order['partnerID'] === 'Naver'){
+                $custom['email'] = $order['numberId']."@naver.com";
+                $custom['customergroup'] = "NK";
+            }
+            else if($order['partnerID'] === 'G9'){
+                $custom['email'] = $order['numberId']."@gmarket.com";
+                $custom['paymentID'] = 8;
+            }
+            else if($order['partnerID'] === '11St')
+                $custom['email'] = $order['numberId']."@11st.com";
 
             array_push($customs, $this->toUtf8($custom));
         }
@@ -351,8 +378,8 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
     }
 
     protected function getLastTrackingCode(){
-        $tcQuery = "SELECT trackingcode FROM s_order o ORDER BY o.trackingcode DESC";
-        $lastTrackingCode = Shopware()->Models()->getConnection()->fetchAll($tcQuery)[0]['trackingcode'];
+        $tcQuery = "SELECT trackingCode FROM s_order o ORDER BY o.trackingCode DESC";
+        $lastTrackingCode = Shopware()->Models()->getConnection()->fetchAll($tcQuery)[0]['trackingCode'];
 
         return $lastTrackingCode+1;
     }
