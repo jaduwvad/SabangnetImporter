@@ -85,24 +85,24 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             array_push($orders, $this->getOrderSingleData($orderData));
         }
 
-        //$orders = $this->getOrderMergedData($orders);
-        //$customers = $this->getCustomerData($orders);
+        $orders = $this->getOrderMergedData($orders);
+        $customers = $this->getCustomerData($orders);
 
-        //$this->exportFiles($this->toUtf8($orders), ';', "Bestellung.csv");
-        //$this->exportFiles($this->toUtf8($customers), ';',  "Kunden.csv");
+        $this->exportFiles($this->toUtf8($orders), ';', "Bestellung.csv");
+        $this->exportFiles($this->toUtf8($customers), ';',  "Kunden.csv");
 
-        echo json_encode(array(
-            'success' => false,
-            'message' => $this->getArticleName('MM11206'),
-        ));
+        //echo json_encode(array(
+        //    'success' => false,
+        //    'message' => $this->getArticleName(str_replace("\n", "", $this->getUpdateArticleNumber('ITS-2785418000'))),
+        //));
         return;
     }
 
     protected function exportFiles($orders, $delimiter, $filename) {
         $result = implode(";", array_keys($orders[0]))."\r\n";
-        foreach ($orders as $order) {
+        foreach ($orders as $order) 
             $result .= implode(";", $order)."\r\n";
-        }
+        
 
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename='.$filename.';');
@@ -224,7 +224,14 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $order['attribute1'] = $orderData['11St Versand Nr'];
         }
 
-        $order['articleName'] = $this->getArticleName($order['articleNumber']);
+        $articleName = $this->getArticleName($order['articleNumber']);
+
+        if($articleName == ""){
+            $order['articleNumber'] = $this->getUpdateArticleNumber($order['articleNumber']);
+            $articleName = $this->getArticleName($order['articleNumber']);
+        }
+
+        $order['articleName'] = $articleName;
 
         return $order;
     }
@@ -327,6 +334,13 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         }
 
         return $customs;
+    }
+
+    protected function getUpdateArticleNumber($articleNumber){
+        $anQuery = "select articleNumber_after from articleNumber_update where articleNumber_before = \"".$articleNumber."\"";
+        $an = Shopware()->Models()->getConnection()->fetchAll($anQuery)[0]['articleNumber_after'];
+
+        return $an;
     }
 
     protected function getArticleName($articleNumber) {
