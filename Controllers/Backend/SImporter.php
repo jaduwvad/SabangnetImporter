@@ -93,7 +93,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
         //echo json_encode(array(
         //    'success' => false,
-        //    'message' => $orders[0],
+        //    'message' => $this->parseSetArticle($order[0], '2_10268689_SET'),
         //));
         return;
     }
@@ -231,16 +231,14 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
         $order['invoice_amount_net'] = number_format($order['invoice_amount_net']/$currency, 1)."0";
         
-
-        if(strpos($articleNumber, "_SET_") !== false){
-            $temp = explode("_", $articleNumber);
-            $articleNumber = $temp[2];
-            $quantity = $temp[0];
-            $order['quantity'] = $quantity;
-            $order['price'] /= $quantity;
+        if(strpos($articleNumber, "SET") !== false){
+            $re = $this->parseSetArticle($order, $articleNumber);
+            $order['articleNumber'] = $re['articleNumber'];
+            $order['quantity'] = $re['quantity'];
+            $order['price'] = $re['price'];
         }
-
-        $order['articleNumber'] = $articleNumber;
+        else
+            $order['articleNumber'] = $articleNumber;
 
         $articleName = $this->getArticleName($order['articleNumber']);
 
@@ -251,13 +249,45 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
                 $articleName = $this->getArticleName($order['articleNumber']);
             }
         }
-            
 
         $order['articleName'] = $articleName;
 
         return $order;
     }
 
+    protected function parseSetArticle($order, $articleNumber){
+            $temp = explode("_", $articleNumber);
+            $setIndex = array_search("SET", $temp);
+
+            switch($setIndex){
+                case 0:
+                    $ind1 = 1;
+                    $ind2 = 2;
+                    break;
+                case 1:
+                    $ind1 = 0;
+                    $ind2 = 2;
+                    break;
+                case 2:
+                    $ind1 = 0;
+                    $ind2 = 1;
+                    break;
+            }
+
+            if($temp[$ind1]>$temp[$ind2]){
+                $articleNumber = $temp[$ind1];
+                $quantity = $temp[$ind2];
+            }else{
+                $articleNumber = $temp[$ind2];
+                $quantity = $temp[$ind1];
+            }
+
+            $result['articleNumber'] = $articleNumber;
+            $result['quantity'] = $order['quantity']*$quantity;
+            $result['price'] = $order['price']/$quantity;
+
+            return $result;
+    }
 
     protected function getOrderMergedData($orders) {
         $lastTrackingCode = $this->getLastTrackingCode();
