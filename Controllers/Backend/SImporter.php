@@ -1,6 +1,5 @@
 <?php
 
-
 class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backend_ExtJs {
 
     protected $uploadedFilePath;
@@ -93,7 +92,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
         //echo json_encode(array(
         //    'success' => false,
-        //    'message' => $this->parseSetArticle($order[0], '2_10268689_SET'),
+        //    'message' => $orders[1]['articleNumber'],
         //));
         return;
     }
@@ -231,17 +230,22 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
         $order['invoice_amount_net'] = number_format($order['invoice_amount_net']/$currency, 1)."0";
         
+        if($articleNumber === "") {
+            $articleNumber = explode('/', $orderData['varianten'])[1];
+            $articleNumber = trim(explode("-", $articleNumber)[0]);
+        }
+
         if(strpos($articleNumber, "SET") !== false){
             $re = $this->parseSetArticle($order, $articleNumber);
-            $order['articleNumber'] = $re['articleNumber'];
+            $articleNumber = $re['articleNumber'];
             $order['quantity'] = $re['quantity'];
             $order['price'] = $re['price'];
         }
-        else
-            $order['articleNumber'] = $articleNumber;
+
+        $order['articleNumber'] = $articleNumber;
 
         $articleName = $this->getArticleName($order['articleNumber']);
-
+        
         if($articleName == ""){
             $anTemp = $this->getUpdateArticleNumber($order['articleNumber']);
             if($anTemp !== ""){
