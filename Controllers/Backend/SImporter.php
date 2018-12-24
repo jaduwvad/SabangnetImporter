@@ -18,11 +18,16 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
     protected $manager = null;
 
+    /**
+     *  main action function.
+     *  after exception handling, start to parse inserted file data 
+     */
     public function importAction(){ 
         try {
             @set_time_limit(0);
             $this->Front()->Plugins()->Json()->setRenderer(false);
 
+            // check the file upload success
             if ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
                 echo json_encode(array(
                     'success' => false,
@@ -33,7 +38,8 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
             $fileName  = basename($_FILES['file']['name']);
             $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-
+ 
+            // check the filename extension. only csv is acceptable
             if (!in_array($extension, array('csv'))) {
                 echo json_encode(array(
                     'success' => false,
@@ -42,6 +48,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
                 return;
             }
 
+            //move file data in system and set access level
             $destPath = Shopware()->DocPath('media_' . 'temp');
             if (!is_dir($destPath)) {
                 mkdir($destPath, 0777, true);
@@ -60,6 +67,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $this->uploadedFilePath = $filePath;
             chmod($filePath, 0644);
 
+            // if all pass, parsing process start
             $this->importProcess($filePath);
             return;
 
@@ -90,10 +98,6 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $this->exportFiles($this->toUtf8($orders), ';', "Bestellung.csv");
         $this->exportFiles($this->toUtf8($customers), ';',  "Kunden.csv");
 
-        //echo json_encode(array(
-        //    'success' => false,
-        //    'message' => $orders[1]['articleNumber'],
-        //));
         return;
     }
 
@@ -101,7 +105,6 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $result = implode(";", array_keys($orders[0]))."\r\n";
         foreach ($orders as $order) 
             $result .= implode(";", $order)."\r\n";
-        
 
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename='.$filename.';');
@@ -111,6 +114,11 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         return;
     }
 
+    /**
+     *  make order sheet from order data
+     *  do different calculation by shop
+     *  check set items and calc price
+     */
     protected function getOrderSingleData($orderData){
         $addr_attr = $this->getAddrAttr(str_replace("-", "",  $orderData['POSTCODE']));
         $currency = $this->getCurrency();
@@ -198,10 +206,15 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             $order['ustid'] = $orderData['Option6'];
             $order['partnerID'] = 'Naver';
             $order['paymentID'] = 7;
-	    $articleNumber = $orderData['Option7'];
+            $articleNumber = ($orderData['Option4']=="")? $orderData['Option7']:$orderData['Option4'];
             $order['invoice_amount_net'] -= $orderData['Option8']+$orderData['Option9'];
             $order['invoiceShippingNet'] *= 96/100;
             $order['attribute1'] = $orderData['Naver/Gmarket Nr'];
+
+            if($orderData['varianten'] != ""){
+                $order['price'] = $orderData['Totalpreis']/$orderData['menge'];
+                $order['price'] = number_format($order['price']/$currency, 1)."0";
+            }
         } 
         else if($shop === '지마켓'){
             $order['ustid'] = $orderData['Option8'];
@@ -259,6 +272,11 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         return $order;
     }
 
+    /**
+     *  calc set items
+     *  three kinds of set item tag
+     *  (SET_n_artnumber), (n_SET_artnumber), (n_artnumber_SET)
+     */
     protected function parseSetArticle($order, $articleNumber){
             $temp = explode("_", $articleNumber);
             $setIndex = array_search("SET", $temp);
@@ -293,10 +311,17 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             return $result;
     }
 
+    /**
+     *  one customer and more than two ordered items, 
+     *  it should merged by customer.
+     *  one tracking number by one customer each
+     */
     protected function getOrderMergedData($orders) {
         $lastTrackingCode = $this->getLastTrackingCode();
-        $lastNumberId = 0;
+        $lastPhoneNumber = 0;
         $orderNum = count($orders);
+        $numberid = "";
+        $customerid = "";
 
         $internalComment = "";
         $attr1 = "";
@@ -304,10 +329,12 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         $attr3 = "";
 
         for($i=0; $i<count($orders); $i++) {
-            if($lastNumberId !== $orders[$i]['numberId']) {
-                $lastNumberId = $orders[$i]['numberId'];
+            if($lastPhoneNumber !== $orders[$i]['phone'] && $orders[$i]['phone'] !== '') {
+                $lastPhoneNumber = $orders[$i]['phone'];
                 $orders[$i]['trackingCode'] = $lastTrackingCode;
                 $lastTrackingCode += 1;
+                $numberid = $orders[$i]['numberId'];
+                $customerid = $orders[$i]['customerId'];
 
                 $internalComment = $orders[$i]['numberId'].','.','.$orders[$i]['attribute1'];
                 $attr1 = $orders[$i]['attribute1'];
@@ -316,7 +343,7 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             
 
                 for($j = $i+1; $j<count($orders); $j++) {
-                    if($lastNumberId !== $orders[$j]['numberId'])
+                    if($lastPhoneNumber !== $orders[$j]['phone'])
                         break;
 
                     $internalComment = $orders[$j]['numberId'].','.$internalComment.','.$orders[$j]['attribute1'];
@@ -330,6 +357,8 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
             }
 
             $orders[$i]['internalComment'] = $internalComment;
+            $orders[$i]['numberId'] = $numberid;
+            $orders[$i]['customerId'] = $customerid;
             $orders[$i]['attribute1'] = $attr1;
             $orders[$i]['attribute2'] = $attr2;
             $orders[$i]['attribute3'] = $attr3;
@@ -338,6 +367,10 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         return $orders;
     }
 
+    /**
+     *  get customer data from order data
+     *  use merged order data to prevent duplication
+     */
     protected function getCustomerData($orders) {
         $customs = array();
 
@@ -400,7 +433,10 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
 
         return $customs;
     }
-
+    /**
+     *  change old article number to new article number
+     *  use database connection
+     */
     protected function getUpdateArticleNumber($articleNumber){
         $anQuery = "select articleNumber_after from articleNumber_update where articleNumber_before = \"".$articleNumber."\"";
         $an = Shopware()->Models()->getConnection()->fetchAll($anQuery)[0]['articleNumber_after'];
@@ -415,6 +451,10 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         return $articleName;
     }
 
+    /**
+     *  to use tracking number without duplication.
+     *  order should use 
+     */ 
     protected function getLastTrackingCode(){
         $tcQuery = "SELECT trackingCode FROM s_order o ORDER BY o.trackingCode DESC";
         $lastTrackingCode = Shopware()->Models()->getConnection()->fetchAll($tcQuery)[0]['trackingCode'];
@@ -436,6 +476,10 @@ class Shopware_Controllers_Backend_SImporter extends Shopware_Controllers_Backen
         return $attr[0];
     }
 
+    /**
+     *  encode string to utf8
+     *  to show Germany
+     */
     protected function toUtf8(array $input)
     {
         array_walk_recursive($input, function (&$value) {
